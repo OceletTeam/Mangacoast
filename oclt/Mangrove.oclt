@@ -1,0 +1,339 @@
+
+entity Mangrove
+{
+	property List<List<Point>> mangrove_points				//	List of point for each mangrove surface and so it's a list of list of point
+	property List<Integer> list_index_mangrove_surface		//	Index of each mangrove surface
+	
+	property List<List<Integer>> list_coastal_mangrove_points
+	property List<List<Integer>> list_coastal_mangrove_points_protected
+	
+
+	property Integer id										//	Index of one mangrove surface 			(read input and save output shapefile, used in minimisation)
+	property MultiPolygon mangrove_polygon					//	List of point of one mangrove surface 	(read input and save output shapefile)
+	property Integer year									//	Year of mangrove surface     			(output shapefile)  
+	property Integer iteration								//	Index of the surface/polyligne			(output shapefile)
+	
+	property MultiLine chenier
+	
+
+
+
+
+	service String initMangroveEntity(List<Mangrove> list_mangrove_shoreline, Integer starting_year, Integer indexsector, List<Chenier> list_chenier, List<Mudbank> list_mb)
+	{
+		
+		
+		
+		// --------------------------------------------------------------------- // 
+		//	Read chenier structure
+		// --------------------------------------------------------------------- // 
+		chenier = list_chenier.get(0).chenier_line
+		
+		
+		println(indexsector)
+		
+		
+		// --------------------------------------------------------------------- // 
+		//	Find sub index in fonction on sector ID
+		// --------------------------------------------------------------------- // 
+		let sectorname  = new String 
+
+		if(indexsector == 1) 
+		{
+			list_index_mangrove_surface.add(1);
+			list_index_mangrove_surface.add(2);
+			sectorname = "AWALA"
+		}
+
+		if(indexsector == 2) 
+		{
+			list_index_mangrove_surface.add(3);
+			list_index_mangrove_surface.add(4);
+			sectorname = "ORGANABO"
+		}
+
+		if(indexsector == 3) 
+		{
+			list_index_mangrove_surface.add(5);
+			sectorname = "IRACOUBO"
+		}
+
+		if(indexsector == 4) 
+		{
+			list_index_mangrove_surface.add(6);
+			sectorname = "SINNAMARY"
+		}
+		
+		if(indexsector == 5) 
+		{
+			list_index_mangrove_surface.add(7);
+			sectorname = "MACOURIA"
+		}
+		
+		if(indexsector == 6) 
+		{
+			list_index_mangrove_surface.add(1);
+			list_index_mangrove_surface.add(2);
+			list_index_mangrove_surface.add(3);
+			list_index_mangrove_surface.add(4);
+			list_index_mangrove_surface.add(5);
+			sectorname = "NORTH"
+		}
+		
+		if(indexsector == 7) 
+		{
+			list_index_mangrove_surface.add(6);
+			list_index_mangrove_surface.add(7);
+			sectorname = "SOUTH"
+		}
+		
+		if(indexsector == 8) 
+		{
+			list_index_mangrove_surface.add(1);
+			list_index_mangrove_surface.add(2);
+			list_index_mangrove_surface.add(3);
+			list_index_mangrove_surface.add(4);
+			list_index_mangrove_surface.add(5);
+			list_index_mangrove_surface.add(6);
+			list_index_mangrove_surface.add(7);
+			sectorname = "REGIONAL"
+		}
+		
+		
+		// --------------------------------------------------------------------- // 
+		// Extract good surface 
+		// --------------------------------------------------------------------- // 
+		for(subindex : list_index_mangrove_surface)
+		{
+			for(temp_mangrove : list_mangrove_shoreline)
+			{
+				if(temp_mangrove.year == starting_year && temp_mangrove.id == subindex)
+				{		
+					
+					//	Init the list of mangrove points for specific ID
+					mangrove_points.add(temp_mangrove.mangrove_polygon.asListOfPolygons.get(0).asListOfPoints)
+					
+					//	Init days protected by mudbank
+					let nbpoints = temp_mangrove.mangrove_polygon.asListOfPolygons.get(0).asListOfPoints.length
+					let temp_list = new List<Integer>
+					temp_list.addFill(nbpoints, 0)							
+					list_coastal_mangrove_points_protected.add(temp_list)	
+					
+					//	Init coastal mangrove points
+					list_coastal_mangrove_points.add(new List<Integer>)
+				}
+				
+			}
+		}	
+		
+		// --------------------------------------------------------------------- // 
+		//	Find each mangrove points able to move during the simulation 
+		// --------------------------------------------------------------------- // 
+		let enveloppe_datafacer = new EnveloppeMGDatafacer
+		enveloppe_datafacer.setFileName("data/MangroveData/ENVELOPPE.shp")
+		let list_enveloppe = enveloppe_datafacer.readAll
+		fix nb_mangrove_surface = list_index_mangrove_surface.size
+				
+		for(env : list_enveloppe)
+		{	
+			for(cpt_list_mangrove : 0..nb_mangrove_surface-1)
+			{
+				if (env.id_mg == list_index_mangrove_surface.get(cpt_list_mangrove))
+				{
+					let shape_env = env.enveloppe.asListOfPolygons.get(0)
+					for(point : mangrove_points.get(cpt_list_mangrove))
+					{		
+						if (shape_env.contains(point))
+						{
+							list_coastal_mangrove_points.get(cpt_list_mangrove).add(1)
+						}
+						else
+						{
+							list_coastal_mangrove_points.get(cpt_list_mangrove).add(0)
+						}
+					}
+					
+				}
+			}		
+		}
+		
+		// --------------------------------------------------------------------- // 
+		//	Init point who are protected since 2 years by MB
+		// --------------------------------------------------------------------- // 
+		fix nblistmg = mangrove_points.length
+		for(cptlist : 0..nblistmg-1)
+		{
+			let lmg = mangrove_points.get(cptlist)
+			for(mb1 : list_mb)
+			{
+				if(mb1.year == (starting_year-2))
+				{
+					for(mb2 : list_mb)
+					{
+						if(mb2.id == mb1.id && mb2.year == starting_year-1)
+						{
+							let nbpoint = lmg.length
+							for(cptpoint : 0..nbpoint-1)
+							{
+								let pmg = lmg.get(cptpoint)																
+								if(mb1.shape.asListOfPolygons.get(0).contains(pmg) && mb2.shape.asListOfPolygons.get(0).contains(pmg))
+								{
+									list_coastal_mangrove_points_protected.get(cptlist).set(cptpoint, 365*2)
+								}
+								if(!mb1.shape.asListOfPolygons.get(0).contains(pmg) && mb2.shape.asListOfPolygons.get(0).contains(pmg))
+								{
+									list_coastal_mangrove_points_protected.get(cptlist).set(cptpoint, 365)
+								}
+							}
+						}	
+					}
+				}
+			}
+		}
+		
+		return sectorname
+	}
+
+
+
+
+
+
+
+
+
+
+
+	service Double isUnderMudbankInfluence(List<Mudbank> list_mb, Point mangrove_point, Double wave_direction)
+	{
+		//	Creates a 30km long segment from the shorepoint and going in the opposite direction of waves
+		// ==============================================================================================
+		fix delta_x = -100000.0 * cos(toRadians(wave_direction))
+		fix delta_y = -100000.0 * sin(toRadians(wave_direction))
+		fix p2 = Point|xy(mangrove_point.x + delta_x, mangrove_point.y + delta_y)
+		fix segment = Line|points(mangrove_point, p2)
+		
+		
+		//	Find intersection between the segment and each mudbank
+		// ========================================================
+		let distance_from_mudbank_expansion = 0.0
+		for(mb : list_mb)
+		{	
+			if(mb.shape.asListOfPolygons.get(0).contains(mangrove_point))
+			{
+				//	Compute a line from the shape of mudbank (more easy to compute distance after)
+				// ================================================================================
+				let list_points_mb = mb.shape.asListOfPolygons.get(0).asListOfPoints
+				let mb_line_shape = Line|points(list_points_mb)
+				let intersection_geom = segment.intersection(mb_line_shape)
+				
+				let list_distance = new List<Double>	
+				for(cptpoint : 0..intersection_geom.numPoints-1)
+				{
+					list_distance.add(mangrove_point.distance(intersection_geom.getGeometryN(cptpoint)))
+				}
+				distance_from_mudbank_expansion = list_distance.min
+			}
+	
+		}
+		
+		
+		//	No influence if the distance from expansion is to short
+		// =========================================================
+		if(distance_from_mudbank_expansion < 100.0)
+		{
+			distance_from_mudbank_expansion = 0.0
+		}
+		
+		return distance_from_mudbank_expansion
+	}
+	
+	
+	
+	
+	
+	
+	
+	
+	service Boolean isNearTheOcean(Point mangrove_point, Double wave_direction)
+	{
+		//	Creates a 100km long segment from the shorepoint and going in the opposite direction of waves
+		// ==============================================================================================
+		fix delta_x = -100000.0 * cos(toRadians(wave_direction))
+		fix delta_y = -100000.0 * sin(toRadians(wave_direction))
+		fix p2 = Point|xy(mangrove_point.x + delta_x, mangrove_point.y + delta_y)
+		fix segment = Line|points(mangrove_point, p2)
+		
+		
+		//	Intersect the point with each mangrove surface (more easy to analyse with line format than polygon)
+		// =====================================================================================================
+		let is_near_the_ocean = true
+		for(list_points : mangrove_points)
+		{
+			let line_point = Line|points(list_points)
+			let intersection = line_point.intersection(segment)
+
+			//	The point is near the sea if (see draw PE):  
+			//  No intersection with the mangrove surface 		(numpoints = 0)
+			//	Or the only intersection is the point itself 	(numpoints = 1)
+			// ================================================================
+			if(intersection.numPoints >= 2)
+			{
+				is_near_the_ocean = false
+			}
+		}
+		return is_near_the_ocean
+	}	
+}
+
+
+
+
+
+// -------------------------------------------------------------- //
+// -------------------------------------------------------------- //
+datafacer MangroveDatafacer
+{
+	data Shapefile("data/MangroveData/COASTAL_MANGROVE_LINE_UTM22.shp", "EPSG:32622")
+	match Mangrove
+	{
+		mangrove_polygon : "the_geom"
+		year : "year"
+		id : "id"
+		iteration : "iteration"
+	}
+}
+// -------------------------------------------------------------- //
+// -------------------------------------------------------------- //
+entity Chenier
+{
+	property MultiLine chenier_line
+	property Integer year
+}
+datafacer ChenierDatafacer
+{
+	data Shapefile("data/MangroveData/CHENIER.shp", "EPSG:32622")
+	match Chenier
+	{
+		chenier_line : "the_geom"
+		year : "Years"
+	}
+}
+// -------------------------------------------------------------- //
+// -------------------------------------------------------------- //
+entity EnveloppeMG
+{
+	property MultiPolygon enveloppe
+	property Integer id_mg
+}
+datafacer EnveloppeMGDatafacer
+{
+	data Shapefile("data/MangroveData/ENVELOPPE_MG.shp", "EPSG:32622")
+	match EnveloppeMG
+	{
+		enveloppe : "the_geom"
+		id_mg : "id_mg"
+	}
+}
+// -------------------------------------------------------------- //
+// -------------------------------------------------------------- //

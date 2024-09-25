@@ -1,0 +1,21 @@
+
+entity Mudbank
+{
+	
+	property MultiPolygon shape   				// Boundary of a mudbank
+	property Integer year						// Using to select good mudbank during initialisation and for switching mudbank shape between year
+	property Integer id							// Individual ID of mudbanks
+}
+
+
+
+datafacer MudbankDatafacer
+{
+	data Shapefile("data/MudbankData/MUDBANK_2013_2020_LINES_UTM_22.shp", "EPSG:32622")
+	match Mudbank
+	{
+		shape : "the_geom"
+		year  : "year"
+		id : "id"
+	}
+}

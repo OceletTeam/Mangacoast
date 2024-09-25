@@ -1,0 +1,171 @@
+
+relation OceanMangroveRelation<Ocean ocean, Mangrove mangrove>
+{
+	
+	property Double sfw
+	property Double sfc
+	property Double pow_n
+	property Double clniz
+	
+	property Double longitude_limit
+	property Double land_orientation_left
+	property Double land_orientation_right
+	
+	property Integer expansionrandom
+	property Integer isMudbankSector
+	property Integer saveToTextFile
+	property String  dir_path
+	
+	
+	interaction initializeParameters(Double sw, Double p, Double c)
+	{
+		sfw = sw
+		pow_n = p
+		clniz = c
+		
+		longitude_limit = 282851.0	
+		land_orientation_left = 160.0
+		land_orientation_right = 138.0
+
+	}
+	
+	
+	
+	interaction warpMangrove(List<Mudbank> list_mb, Integer current_day, Integer total_day, DateTime current_date)
+	{
+		//	Variables
+		// ===========
+		fix attenuation_distance = 5000.0
+		fix nb_list_points = mangrove.mangrove_points.length
+		
+		let wave_direction = 0.0
+		let wave_intensity = 0.0
+				
+		let dxi = 0.0
+		let dyi = 0.0
+		
+		let ratt = 0.0
+		let fatt = 0.0
+		let cross_shore_direction = 0.0
+		
+		
+		//	For each mangrove surface
+		// ===========================
+		for(index_list : 0 .. nb_list_points-1)
+		{
+			
+			let nb_points = mangrove.mangrove_points.get(index_list).length
+			
+			
+			//	For each point of the mangrove surface
+			// ========================================
+			for(index_shorepoint : 0 .. nb_points-1)
+			{
+				
+				let mangrove_point = mangrove.mangrove_points.get(index_list).get(index_shorepoint)
+				let nbdaysprotected = mangrove.list_coastal_mangrove_points_protected.get(index_list).get(index_shorepoint)
+				let isCoastalPoint = mangrove.list_coastal_mangrove_points.get(index_list).get(index_shorepoint)
+
+				//	Move shorepoint only if it's next to the ocean
+				// ================================================ 		
+				if(isCoastalPoint == 1)
+				{
+					
+					
+					//	Find closet nearshore cell and initialize is daily data
+					// =========================================================
+					let index_cell = ocean.findGoodCell(mangrove_point, total_day, current_day)
+					let index_data = index_cell * total_day + current_day				//	See : schema_index_data.ppt
+					
+					
+					wave_direction = ocean.wave_dir.get(index_data)
+					wave_intensity = ocean.wave_int.get(index_data)
+					
+					
+					
+					//	Check if the shorepoint is under the influence of a mudbank
+					// =============================================================
+					ratt = mangrove.isUnderMudbankInfluence(list_mb, mangrove_point, wave_direction)
+					
+									
+										
+					//	Apply attenuation (wave damping)
+					// ==================================
+					if(ratt < attenuation_distance) { fatt = pow((1.0 - ratt/attenuation_distance), pow_n) }
+					else							{ fatt = 0.0 }
+					
+					
+					
+					//	Apply erosion or expansion of the shorepoint depending of attenuation value
+					// =============================================================================
+					if(fatt > 0.0)
+					{	
+						
+						
+						//	No erosion near the land limit OR no erosion for mubdank scenario if points are not protected by mudbank
+						// ==========================================================================================================
+						if(mangrove_point.distance(mangrove.chenier) > 100)
+						{
+							dxi = sfw * fatt * wave_intensity * cos(toRadians(wave_direction))
+							dyi = sfw * fatt * wave_intensity * sin(toRadians(wave_direction))													
+							
+							//	Erode mangrove point
+							// =======================
+							mangrove.mangrove_points.get(index_list).set(index_shorepoint, mangrove_point.move(dxi, dyi))
+										
+						}
+						
+						
+						
+						//	Interbank phase, reboot the counter
+						// =====================================
+						if (fatt == 1)
+						{
+							mangrove.list_coastal_mangrove_points_protected.get(index_list).set(index_shorepoint, 0)
+						}
+						
+						
+						//	Mudbank present around the mangrove point
+						// ===========================================
+						else
+						{
+							mangrove.list_coastal_mangrove_points_protected.get(index_list).set(index_shorepoint, nbdaysprotected + 1)
+						}
+					}
+					
+					else
+					{
+						if(nbdaysprotected >= 365*2)
+						{
+							
+							
+							// Compute the expansion direction == perpendicular angle to the local orientation of the coast
+							// ============================================================================================
+
+							if(mangrove_point.x <= longitude_limit) { cross_shore_direction = land_orientation_left  - 45.0 }
+							else                                	{ cross_shore_direction = land_orientation_right - 45.0 } 
+													
+							
+							dxi = clniz * cos(toRadians(cross_shore_direction))
+							dyi = clniz * sin(toRadians(cross_shore_direction))
+							
+							
+							
+							//	Expand mangrove point
+							// =======================
+							mangrove.mangrove_points.get(index_list).set(index_shorepoint, mangrove_point.move(dxi, dyi))	
+						}
+						else
+						{
+							
+							
+							//	Don't move the point but add one day of protection by mudbank
+							// ===============================================================
+							mangrove.list_coastal_mangrove_points_protected.get(index_list).set(index_shorepoint, nbdaysprotected + 1)
+						}
+					}	
+				}
+			}
+		}
+	}
+}

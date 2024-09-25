@@ -1,0 +1,155 @@
+
+entity Ocean
+{
+	
+	//	List of center of each cells in UTM 22N
+	// =======================================================================================================
+	property List<CellPosition> cells_position
+	
+	
+	//	Intensity/Direction store in this order : all data from each cells in chronological order 
+	// =======================================================================================================
+	property List<Double> wave_int
+	property List<Double> wave_dir
+	
+	
+	
+	
+	
+	// =======================================================================================================
+	//	Function : initialization(Integer startyear, Integer endyear)
+	//
+	//	Initialize the entity Ocean
+	// =======================================================================================================
+	service initialization(Integer startyear, Integer endyear)
+	{
+		
+		//	Init nearshore cells position
+		// =======================================================================================================
+		fix cell_position_datafacer = new CellPositionDatafacer
+	  	cell_position_datafacer.setFileName("data/OceanicData/NS_CELLS.csv")
+	  	cells_position     =  cell_position_datafacer.readAll	  	
+	  	
+	  	
+	  	
+	  	//	Read all wave dataset from 2013 to 2023
+	  	// =======================================================================================================
+	  	fix cell_data_datafacer_wave = new CellDataDatafacer
+	  	cell_data_datafacer_wave.setFileName("data/OceanicData/WAVE_DATA.csv")
+	  	let temp_wave_data = cell_data_datafacer_wave.readAll
+	  	
+	  	
+	  	
+	  	//	Extract data off all nearshore cells for the specific simulation period
+	  	// =======================================================================================================
+	  	let firstdate  = DateTime|ymd(2013, 7, 1)	  	
+	  	
+	  	let startdate  = DateTime|ymd(startyear, 7, 1)
+	  	let endate     = DateTime|ymd(endyear, 6, 30)
+	  	let nbdays     = startdate.daysDifference(endate) + 1
+	  	
+	  	let nbcells    = cells_position.length
+	  	let totaldata  = temp_wave_data.length
+	  	let totaldays  = (totaldata / nbcells)
+	  	
+	  	let padding_low = (firstdate.daysDifference(startdate)).intValue()
+
+	  	let current_cpt = 0;
+	  	for(let icell = 0; icell < nbcells; icell++)
+	  	{
+	  		for(let iday = 0; iday < nbdays; iday++)
+	  		{
+	  			current_cpt = (totaldays*icell) + padding_low + iday
+	  			
+	  			wave_int.add(temp_wave_data.get(current_cpt).intensity)
+	  			wave_dir.add(temp_wave_data.get(current_cpt).direction)
+	  		}
+	  	}
+	  	
+	  	
+		
+		//	Centered reduction of intensity value 	  
+		// =======================================================================================================	
+	  	let max_intensity = wave_int.max
+	  	for(let idata = 0; idata < wave_int.size; idata++)
+	  	{
+	  		let center_reducted_int = wave_int.get(idata) / max_intensity
+	  		wave_int.set(idata,center_reducted_int)
+	  	}
+	  	
+
+	}
+	
+	
+	
+	// =======================================================================================================
+	//	Function : findGoodCell(Point shorepoint, Integer total_day, Integer current_day)
+	//
+	//	Return the index of the NS cells whose daily direction point is closest to the shorepoint
+	// =======================================================================================================
+	service Integer findGoodCell(Point shorepoint, Integer total_day, Integer current_day)
+	{		
+		let list_distance = new List<Double>		
+		for(let i_cell=0; i_cell<cells_position.length; i_cell++)
+		{			
+			let point_cell = Point|xy(cells_position.get(i_cell).x, cells_position.get(i_cell).y)
+			let index_cell_matrix = i_cell * total_day + current_day
+			let direction_cell = wave_dir.get(index_cell_matrix) 
+			
+			let delta_x = 100000 * cos(toRadians(direction_cell))
+			let delta_y = 100000 * sin(toRadians(direction_cell))
+			let p2 = Point|xy(point_cell.x + delta_x, point_cell.y + delta_y)
+			
+			let segment_cell = Line|points(point_cell, p2) 
+			list_distance.add(shorepoint.distance(segment_cell))			
+		}
+		return list_distance.indexOf(list_distance.min)
+	}
+
+}
+
+
+// -------------------------------------------------------------- //
+// -------------------------------------------------------------- //
+
+
+entity CellPosition
+{
+	property Double x
+	property Double y
+}
+
+datafacer CellPositionDatafacer
+{
+	data Csvfile("data/OceanicData/cell_position.csv")
+    match CellPosition 
+    {
+    	x : "Longitude"
+        y : "Latitude"     
+    }
+}
+
+
+// -------------------------------------------------------------- //
+// -------------------------------------------------------------- //
+
+
+entity CellData
+{
+	property Double intensity
+	property Double direction
+}
+
+datafacer CellDataDatafacer
+{
+	data Csvfile("data/OceanicData/wave_data.csv")
+	match CellData
+	{
+		intensity : "intensity"
+		direction : "direction"
+	}
+}
+
+
+// -------------------------------------------------------------- //
+// -------------------------------------------------------------- //

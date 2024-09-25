@@ -1,0 +1,203 @@
+/**
+ *  Model MANG@COAST2023
+ * 
+ *  Mangrove coast dynamics simulation in French Guiana
+ * 
+ *  Authors :
+ *    Danny Lo Seen     (UMR TETIS, Cirad)
+ *    Christophe Proisy (UMR AMAP,  IRD  )
+ *    Pascal Degenne    (UMR TETIS, Cirad)
+ *    Paul-Emile Augusseau (UMR AMAP, UAR LEEISA, ADEME, DGTM Guyane)
+ * 
+ *  This version is written using Ocelet Chartreuse (v2.1.0) 64 bits.
+ *  Ocelet can be downloaded from http://www.ocelet.fr/
+ */
+
+
+
+metadata {
+	parameter Double pown 		      {default 0.0064874}
+	parameter Double clniz 		      {default 0.000018785}
+	parameter Double sfw 		      {default 3.0}
+	
+	parameter Integer startyear       {default 2013}
+	parameter Integer endyear         {default 2023}
+	
+	parameter Integer indexsector     {default 4}
+}
+ 
+
+
+scenario MANGACOAST_2024 {  	
+
+
+ 
+ 	// =======================================================================================================
+  	//	ENTITY INITIALIZATION
+  	// ======================================================================================================= 	
+  	fix mudbank_datafacer = new MudbankDatafacer
+  	mudbank_datafacer.setFileName("data/MudbankData/MUDBANK_2011_2023_POLYGONES.shp")
+  	fix list_all_mudbank = mudbank_datafacer.readAll
+  	let current_list_mudbank = new List<Mudbank> 
+	for(mudbank : list_all_mudbank)
+	{
+		if(mudbank.year == startyear) { current_list_mudbank.add(mudbank) }
+	}
+	
+	
+	
+	let chenier_datafacer = new ChenierDatafacer()
+	chenier_datafacer.setFileName("data/MangroveData/CHENIER.shp")
+	let list_chenier = chenier_datafacer.readAll
+  	
+  	
+  	
+  	let mangrove_datafacer = new MangroveDatafacer
+  	mangrove_datafacer.setFileName("data/MangroveData/MANGROVE_POLYGON_2013_2023.shp")
+  	let mangrove = new Mangrove
+  	fix list_all_mangrove = mangrove_datafacer.readAll
+  	let sectorname = mangrove.initMangroveEntity(list_all_mangrove, startyear, indexsector, list_chenier, list_all_mudbank)
+  	
+  	
+  	
+  	fix ocean = new Ocean
+  	ocean.initialization(startyear,endyear)
+
+
+
+  	// =======================================================================================================
+  	//	RELATION INITIALIZATION
+  	// ======================================================================================================= 	
+  	fix ocean_mangrove_relation = new OceanMangroveRelation
+  	ocean_mangrove_relation.connect(ocean, mangrove)
+  	ocean_mangrove_relation.initializeParameters(sfw,pown,clniz)
+  	
+  
+  	
+  	// =======================================================================================================
+  	//	OUTPUT FILE INITIALIZATION
+  	// ======================================================================================================= 
+  	mangrove_datafacer.setFileName("output/" + sectorname + ".shp")
+  	  	
+  	
+  	
+  	// =======================================================================================================
+  	//	MAIN LOOP
+  	//	The simulation loop is based on daily time steps, 
+  	//	it stops if the total number of day has been reached. 
+  	// =======================================================================================================
+  	
+  	
+  	//	Variables for the loop 
+    // ========================
+  	fix start_process = new DateTime
+  	let current_dot = 0
+  	let current_day = 0
+  	let current_date = DateTime|ymd(startyear,7,1)	//	See -> prepareOceanicData (function matlab)
+  	let endate       = DateTime|ymd(endyear, 6, 30)
+	let total_day    = (current_date.daysDifference(endate)).intValue + 1
+  	
+  	println()
+  	println()
+  	println("MANGACOAST-EMS-2024")
+  	println()
+  	println("Sector : " + sectorname)
+  	println()
+  	println("Starting simulation from " + current_date + " to " + current_date.addDays(total_day-1) + " :")
+  	println()
+  	
+  	
+  	while(current_day < total_day)
+  	{
+  		
+  		// =======================================================================================================
+  		//	FOR EACH YEAR IN FIRST OF AUGUST (AVERAGE TIME OF MDUBANK SHAPE ACQUISITION)
+  		// =======================================================================================================
+  		if(current_date.getMonth()==7 && current_date.dayOfMonth==1 && current_date.year != startyear)
+  		{
+  			
+  			//	MODIFY THE CURRENT LIST OF MUDBANK 
+  			// ====================================
+  			current_list_mudbank = new List<Mudbank> 
+  			for(mudbank : list_all_mudbank)
+			{
+				if(mudbank.year == current_date.getYear) { current_list_mudbank.add(mudbank) }
+			}
+			
+			
+			// ====================================================		
+			//	SAVE MANGROVE SURFACE IN OUTPUT FILE FOR THIS YEAR
+  			// ====================================================
+			let cpt_list = 0
+  			for(list_point_mangrove : mangrove.mangrove_points)
+  			{
+  				let temp_mangrove = new Mangrove
+  				
+				let temp_poly = Polygon|points(list_point_mangrove)
+				let temp_multipoly = MultiPolygon|polygons(temp_poly)
+  				
+  				temp_mangrove.mangrove_polygon = temp_multipoly
+  				temp_mangrove.year = current_date.getYear()
+  				temp_mangrove.id = mangrove.list_index_mangrove_surface.get(cpt_list)
+  				
+  				mangrove_datafacer.append(temp_mangrove)
+  				cpt_list = cpt_list + 1
+  			}		
+  		}
+  		
+  		
+  		
+  		// ===================================================================================================
+  		//	APPLY INTERACTION
+  		// ===================================================================================================
+  		ocean_mangrove_relation.warpMangrove(current_list_mudbank, current_day, total_day, current_date)
+  		
+  		
+  		
+  		// ===================================================================================================
+  		//	GO TO THE NEXT DAY
+  		// ===================================================================================================
+  		current_day = current_day + 1
+  		current_date = current_date.addDays(1)
+  		
+  		
+  		
+  		// =================================================================================================== 	
+  		//	PLOT A DOT EVERY 1/10 NBDAYS SIMULATED
+  		// ===================================================================================================
+  		if (current_day.doubleValue/total_day > current_dot.doubleValue/10.0 )
+  		{
+  			print(".")
+  			current_dot = current_dot + 1
+  		}
+  	}
+  	
+  	
+  	
+  	fix end_process = new DateTime
+	println()
+  	println()
+  	println("Done (Processing time : "+((end_process.getTimeAsMilliseconds()-start_process.getTimeAsMilliseconds())/1000)+" s)")
+  	
+  	
+  	
+  	// ====================================================================================
+  	//	SAVE FINAL MANGROVE SIMULATED
+  	// ====================================================================================
+  	let cpt_list = 0
+	for(list_point_mangrove : mangrove.mangrove_points)
+	{		
+		let temp_mangrove = new Mangrove
+  				
+		let temp_poly = Polygon|points(list_point_mangrove)
+		let temp_multipoly = MultiPolygon|polygons(temp_poly)
+		
+		temp_mangrove.mangrove_polygon = temp_multipoly
+		temp_mangrove.year = current_date.getYear()
+		temp_mangrove.id = mangrove.list_index_mangrove_surface.get(cpt_list)
+		
+		mangrove_datafacer.append(temp_mangrove)
+		cpt_list = cpt_list + 1
+	}
+}
+
