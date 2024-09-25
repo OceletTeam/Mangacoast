@@ -7,6 +7,8 @@ Mangrove coast dynamics simulation in French Guiana
 This version is written using Ocelet Chartreuse (v2.1.0) 64 bits.
 Ocelet can be downloaded from [http://www.ocelet.fr/](http://www.ocelet.fr/)
 
++ The Ocelet langage source files are located in `oclt/`
+
 ## Installation
 
 + Unarchive the zip file in a directory.
